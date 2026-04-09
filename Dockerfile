@@ -1,35 +1,36 @@
-FROM golang:1.26-alpine AS builder
+FROM ghcr.io/railwayapp/nixpacks:ubuntu-1745885067
 
-WORKDIR /app
+ENTRYPOINT ["/bin/bash", "-l", "-c"]
+WORKDIR /app/
+RUN apt-get update && apt-get install -y golang-go
 
-COPY go.mod go.sum ./
 
-RUN go mod download
 
-COPY . .
 
-ARG VERSION=dev
-ARG COMMIT=none
-ARG BUILD_DATE=unknown
+ARG CGO_ENABLED NIXPACKS_METADATA
+ENV CGO_ENABLED=$CGO_ENABLED NIXPACKS_METADATA=$NIXPACKS_METADATA
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" -o ./CLIProxyAPI ./cmd/server/
+# setup phase
+# noop
 
-FROM alpine:3.22.0
+# install phase
+COPY . /app/.
+RUN --mount=type=cache,id=qdylxRDLqQ-/root/cache/go-build,target=/root/.cache/go-build go mod download
 
-RUN apk add --no-cache tzdata
+# build phase
+COPY . /app/.
+RUN --mount=type=cache,id=qdylxRDLqQ-/root/cache/go-build,target=/root/.cache/go-build go build -o out ./cmd/fetch_antigravity_models
 
-RUN mkdir /CLIProxyAPI
 
-COPY --from=builder ./app/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
 
-COPY config.example.yaml /CLIProxyAPI/config.example.yaml
 
-WORKDIR /CLIProxyAPI
 
-EXPOSE 8317
+# start
+FROM ubuntu:noble
+ENTRYPOINT ["/bin/bash", "-l", "-c"]
+WORKDIR /app/
+COPY --from=0 /etc/ssl/certs /etc/ssl/certs
+RUN true
+COPY --from=0 /app/ /app/
 
-ENV TZ=Asia/Shanghai
-
-RUN cp /usr/share/zoneinfo/${TZ} /etc/localtime && echo "${TZ}" > /etc/timezone
-
-CMD ["./CLIProxyAPI"]
+CMD ["./out"]
